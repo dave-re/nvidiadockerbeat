@@ -1,6 +1,12 @@
 package status
 
 import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+
+	"io/ioutil"
+
 	"github.com/elastic/beats/libbeat/common"
 	"github.com/elastic/beats/metricbeat/mb"
 )
@@ -19,7 +25,7 @@ func init() {
 // multiple fetch calls.
 type MetricSet struct {
 	mb.BaseMetricSet
-	counter int
+	apiURL string
 }
 
 // New create a new instance of the MetricSet
@@ -27,7 +33,11 @@ type MetricSet struct {
 // configuration entries if needed.
 func New(base mb.BaseMetricSet) (mb.MetricSet, error) {
 
-	config := struct{}{}
+	config := struct {
+		APIURL string `config:"apiurl"`
+	}{
+		APIURL: "",
+	}
 
 	if err := base.Module().UnpackConfig(&config); err != nil {
 		return nil, err
@@ -35,7 +45,7 @@ func New(base mb.BaseMetricSet) (mb.MetricSet, error) {
 
 	return &MetricSet{
 		BaseMetricSet: base,
-		counter:       1,
+		apiURL:        config.APIURL,
 	}, nil
 }
 
@@ -43,11 +53,27 @@ func New(base mb.BaseMetricSet) (mb.MetricSet, error) {
 // It returns the event which is then forward to the output. In case of an error, a
 // descriptive error must be returned.
 func (m *MetricSet) Fetch() (common.MapStr, error) {
-
-	event := common.MapStr{
-		"counter": m.counter,
+	resp, err := http.Get(fmt.Sprintf("%s/v1.0/gpu/status/json", m.apiURL))
+	if err != nil {
+		return nil, err
 	}
-	m.counter++
+	bytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	data := common.MapStr{}
+	if err := json.Unmarshal(bytes, &data); err != nil {
+		return nil, err
+	}
+
+	event := common.MapStr{}
+	if devices, ok := data["Devices"].([]interface{}); ok {
+		for i, device := range devices {
+			event.Put(fmt.Sprintf("device%d", i), device)
+		}
+	}
 
 	return event, nil
 }
