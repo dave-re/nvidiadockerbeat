@@ -1,0 +1,10 @@
+////
+This file is generated! See scripts/docs_collector.py
+////
+
+  * <<metricbeat-module-nvidiadocker,nvidiadocker>>
+
+
+--
+
+include::modules/nvidiadocker.asciidoc[]

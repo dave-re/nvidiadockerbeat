@@ -1,0 +1,6 @@
+- module: nvidiadocker
+  metricsets: ["status"]
+  enabled: true
+  period: 10s
+  hosts: ["localhost"]
+

@@ -1,0 +1,9 @@
+- key: nvidiadocker
+  title: "nvidiadocker"
+  description: >
+    nvidiadocker Module
+  fields:
+    - name: nvidiadocker
+      type: group
+      description: >
+      fields:
