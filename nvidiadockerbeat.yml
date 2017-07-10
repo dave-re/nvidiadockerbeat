@@ -17,7 +17,7 @@ nvidiadockerbeat.modules:
   period: 10s
   hosts: ["localhost"]
   apiurl: "http://localhost:3476"
-
+  dockerendpoint: "unix:///var/run/docker.sock"
 
 
 #================================ General =====================================
