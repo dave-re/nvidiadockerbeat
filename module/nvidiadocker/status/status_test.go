@@ -2,10 +2,10 @@ package status
 
 import (
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"testing"
 
-	"github.com/elastic/beats/libbeat/common"
 	docker "github.com/fsouza/go-dockerclient"
 )
 
@@ -58,13 +58,13 @@ func TestNvidiaDeviceRegexp(t *testing.T) {
 }
 
 func TestFetchFromContainer(t *testing.T) {
-	devicesJSON := `[{"Power":13,"Temperature":15,"Utilization":{"GPU":0,"Memory":0,"Encoder":0,"Decoder":0},"Memory":{"GlobalUsed":8,"ECCErrors":{"L1Cache":null,"L2Cache":null,"Global":null}},"Clocks":{"Cores":40,"Memory":405},"PCI":{"BAR1Used":2,"Throughput":{"RX":0,"TX":0}},"Processes":null},{"Power":9,"Temperature":14,"Utilization":{"GPU":0,"Memory":0,"Encoder":0,"Decoder":0},"Memory":{"GlobalUsed":7,"ECCErrors":{"L1Cache":null,"L2Cache":null,"Global":null}},"Clocks":{"Cores":40,"Memory":405},"PCI":{"BAR1Used":2,"Throughput":{"RX":0,"TX":0}},"Processes":null},{"Power":9,"Temperature":18,"Utilization":{"GPU":0,"Memory":0,"Encoder":0,"Decoder":0},"Memory":{"GlobalUsed":7,"ECCErrors":{"L1Cache":null,"L2Cache":null,"Global":null}},"Clocks":{"Cores":40,"Memory":405},"PCI":{"BAR1Used":2,"Throughput":{"RX":0,"TX":0}},"Processes":null},{"Power":9,"Temperature":16,"Utilization":{"GPU":0,"Memory":0,"Encoder":0,"Decoder":0},"Memory":{"GlobalUsed":7,"ECCErrors":{"L1Cache":null,"L2Cache":null,"Global":null}},"Clocks":{"Cores":40,"Memory":405},"PCI":{"BAR1Used":2,"Throughput":{"RX":0,"TX":0}},"Processes":null},{"Power":9,"Temperature":20,"Utilization":{"GPU":0,"Memory":0,"Encoder":0,"Decoder":0},"Memory":{"GlobalUsed":7,"ECCErrors":{"L1Cache":null,"L2Cache":null,"Global":null}},"Clocks":{"Cores":40,"Memory":405},"PCI":{"BAR1Used":2,"Throughput":{"RX":0,"TX":0}},"Processes":null},{"Power":9,"Temperature":15,"Utilization":{"GPU":0,"Memory":0,"Encoder":0,"Decoder":0},"Memory":{"GlobalUsed":7,"ECCErrors":{"L1Cache":null,"L2Cache":null,"Global":null}},"Clocks":{"Cores":40,"Memory":405},"PCI":{"BAR1Used":2,"Throughput":{"RX":0,"TX":0}},"Processes":null},{"Power":9,"Temperature":18,"Utilization":{"GPU":0,"Memory":0,"Encoder":0,"Decoder":0},"Memory":{"GlobalUsed":7,"ECCErrors":{"L1Cache":null,"L2Cache":null,"Global":null}},"Clocks":{"Cores":40,"Memory":405},"PCI":{"BAR1Used":2,"Throughput":{"RX":0,"TX":0}},"Processes":null},{"Power":9,"Temperature":17,"Utilization":{"GPU":0,"Memory":0,"Encoder":0,"Decoder":0},"Memory":{"GlobalUsed":7,"ECCErrors":{"L1Cache":null,"L2Cache":null,"Global":null}},"Clocks":{"Cores":40,"Memory":405},"PCI":{"BAR1Used":2,"Throughput":{"RX":0,"TX":0}},"Processes":null}]`
-	gpuDevices := []common.MapStr{}
+	devicesJSON := `[{"Power":13,"Temperature":15,"Utilization":{"GPU":1,"Memory":1,"Encoder":0,"Decoder":0},"Memory":{"GlobalUsed":8,"ECCErrors":{"L1Cache":null,"L2Cache":null,"Global":null}},"Clocks":{"Cores":40,"Memory":405},"PCI":{"BAR1Used":2,"Throughput":{"RX":0,"TX":0}},"Processes":null},{"Power":9,"Temperature":14,"Utilization":{"GPU":0,"Memory":0,"Encoder":0,"Decoder":0},"Memory":{"GlobalUsed":7,"ECCErrors":{"L1Cache":null,"L2Cache":null,"Global":null}},"Clocks":{"Cores":40,"Memory":405},"PCI":{"BAR1Used":2,"Throughput":{"RX":0,"TX":0}},"Processes":null},{"Power":9,"Temperature":18,"Utilization":{"GPU":0,"Memory":0,"Encoder":0,"Decoder":0},"Memory":{"GlobalUsed":7,"ECCErrors":{"L1Cache":null,"L2Cache":null,"Global":null}},"Clocks":{"Cores":40,"Memory":405},"PCI":{"BAR1Used":2,"Throughput":{"RX":0,"TX":0}},"Processes":null},{"Power":9,"Temperature":16,"Utilization":{"GPU":0,"Memory":0,"Encoder":0,"Decoder":0},"Memory":{"GlobalUsed":7,"ECCErrors":{"L1Cache":null,"L2Cache":null,"Global":null}},"Clocks":{"Cores":40,"Memory":405},"PCI":{"BAR1Used":2,"Throughput":{"RX":0,"TX":0}},"Processes":null},{"Power":9,"Temperature":20,"Utilization":{"GPU":0,"Memory":0,"Encoder":0,"Decoder":0},"Memory":{"GlobalUsed":7,"ECCErrors":{"L1Cache":null,"L2Cache":null,"Global":null}},"Clocks":{"Cores":40,"Memory":405},"PCI":{"BAR1Used":2,"Throughput":{"RX":0,"TX":0}},"Processes":null},{"Power":9,"Temperature":15,"Utilization":{"GPU":0,"Memory":0,"Encoder":0,"Decoder":0},"Memory":{"GlobalUsed":7,"ECCErrors":{"L1Cache":null,"L2Cache":null,"Global":null}},"Clocks":{"Cores":40,"Memory":405},"PCI":{"BAR1Used":2,"Throughput":{"RX":0,"TX":0}},"Processes":null},{"Power":9,"Temperature":18,"Utilization":{"GPU":0,"Memory":0,"Encoder":0,"Decoder":0},"Memory":{"GlobalUsed":7,"ECCErrors":{"L1Cache":null,"L2Cache":null,"Global":null}},"Clocks":{"Cores":40,"Memory":405},"PCI":{"BAR1Used":2,"Throughput":{"RX":0,"TX":0}},"Processes":null},{"Power":9,"Temperature":17,"Utilization":{"GPU":0,"Memory":0,"Encoder":0,"Decoder":0},"Memory":{"GlobalUsed":7,"ECCErrors":{"L1Cache":null,"L2Cache":null,"Global":null}},"Clocks":{"Cores":40,"Memory":405},"PCI":{"BAR1Used":2,"Throughput":{"RX":0,"TX":0}},"Processes":null}]`
+	gpuDevices := []DeviceStatus{}
 	if err := json.Unmarshal([]byte(devicesJSON), &gpuDevices); err != nil {
 		t.Fatal(err)
 	}
 
-	event := fetchFromContainer(&docker.Container{
+	events := fetchFromContainer(&docker.Container{
 		ID:   "id1",
 		Name: "name1",
 		HostConfig: &docker.HostConfig{
@@ -73,11 +73,17 @@ func TestFetchFromContainer(t *testing.T) {
 					PathOnHost:      "/dev/nvidia0",
 					PathInContainer: "/dev/nvidia0",
 				},
+				{
+					PathOnHost:      "/dev/nvidia1",
+					PathInContainer: "/dev/nvidia1",
+				},
 			},
 		},
 	}, gpuDevices)
 
-	if _, err := (event["Devices"].(common.MapStr)).GetValue("0"); err != nil {
-		t.Fatal(err)
+	fmt.Println(events)
+
+	if len(events) != 2 {
+		t.Fatal("no events")
 	}
 }

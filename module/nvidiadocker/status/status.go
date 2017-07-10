@@ -35,10 +35,6 @@ type MetricSet struct {
 	dockerClient *docker.Client
 }
 
-type nvidiaStatus struct {
-	Devices []common.MapStr `json:"Devices"`
-}
-
 // New create a new instance of the MetricSet
 // Part of new is also setting up the configuration by processing additional
 // configuration entries if needed.
@@ -71,36 +67,6 @@ func New(base mb.BaseMetricSet) (mb.MetricSet, error) {
 // Fetch methods implements the data gathering and data conversion to the right format
 // It returns the event which is then forward to the output. In case of an error, a
 // descriptive error must be returned.
-// func (m *MetricSet) Fetch() (common.MapStr, error) {
-
-// 	resp, err := http.Get(fmt.Sprintf("%s/v1.0/gpu/status/json", m.apiURL))
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	bytes, err := ioutil.ReadAll(resp.Body)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	defer resp.Body.Close()
-
-// 	data := common.MapStr{}
-// 	if err := json.Unmarshal(bytes, &data); err != nil {
-// 		return nil, err
-// 	}
-
-// 	event := common.MapStr{}
-// 	if devices, ok := data["Devices"].([]interface{}); ok {
-// 		for i, device := range devices {
-// 			event.Put(fmt.Sprintf("device%d", i), device)
-// 		}
-// 	}
-
-// 	return event, nil
-// }
-
-// Fetch methods implements the data gathering and data conversion to the right format
-// It returns the event which is then forward to the output. In case of an error, a
-// descriptive error must be returned.
 func (m *MetricSet) Fetch() ([]common.MapStr, error) {
 	apiContainers, err := m.dockerClient.ListContainers(docker.ListContainersOptions{})
 	if err != nil {
@@ -119,20 +85,20 @@ func (m *MetricSet) Fetch() ([]common.MapStr, error) {
 	return m.fetchFromContainers(apiContainers, gpuDevices)
 }
 
-func (m *MetricSet) fetchFromContainers(apiContainers []docker.APIContainers, gpuDevices []common.MapStr) ([]common.MapStr, error) {
-	events := make([]common.MapStr, 0, len(apiContainers))
+func (m *MetricSet) fetchFromContainers(apiContainers []docker.APIContainers, gpuDevices []DeviceStatus) ([]common.MapStr, error) {
+	allEvents := make([]common.MapStr, 0, len(apiContainers))
 	for _, apiContainer := range apiContainers {
 		if container, err := m.dockerClient.InspectContainer(apiContainer.ID); err == nil {
-			event := fetchFromContainer(container, gpuDevices)
-			if len(event["Devices"].(common.MapStr)) > 0 {
-				events = append(events, event)
+			events := fetchFromContainer(container, gpuDevices)
+			if len(events) > 0 {
+				allEvents = append(allEvents, events...)
 			}
 		}
 	}
-	return events, nil
+	return allEvents, nil
 }
 
-func getGPUDeviceStatus(apiURL string) ([]common.MapStr, error) {
+func getGPUDeviceStatus(apiURL string) ([]DeviceStatus, error) {
 	resp, err := http.Get(fmt.Sprintf("%s/v1.0/gpu/status/json", apiURL))
 	if err != nil {
 		return nil, err
@@ -143,7 +109,7 @@ func getGPUDeviceStatus(apiURL string) ([]common.MapStr, error) {
 	}
 	defer resp.Body.Close()
 
-	status := nvidiaStatus{}
+	status := NvidiaStatus{}
 	if err := json.Unmarshal(bytes, &status); err != nil {
 		return nil, err
 	}
@@ -151,22 +117,26 @@ func getGPUDeviceStatus(apiURL string) ([]common.MapStr, error) {
 	return status.Devices, nil
 }
 
-func fetchFromContainer(container *docker.Container, gpuDevices []common.MapStr) common.MapStr {
+func fetchFromContainer(container *docker.Container, gpuDevices []DeviceStatus) []common.MapStr {
 	gpuDevicesLen := len(gpuDevices)
-	event := common.MapStr{
-		"ContainerName": container.Name,
-		"Devices":       common.MapStr{},
-	}
+	events := []common.MapStr{}
 	for _, device := range container.HostConfig.Devices {
 		if findStrs := nvidiaDeviceRegexp.FindStringSubmatch(device.PathOnHost); findStrs != nil && len(findStrs) == 2 {
 			if nvidiaIndex, err := strconv.ParseInt(findStrs[1], 10, 64); err == nil {
 				if int(nvidiaIndex) < gpuDevicesLen {
-					(event["Devices"].(common.MapStr)).Put(fmt.Sprintf("%d", nvidiaIndex), gpuDevices[nvidiaIndex])
+					gpuDevices[nvidiaIndex].Index = toUintP(uint(nvidiaIndex))
+					events = append(events, common.MapStr{
+						"containername": container.Name,
+						"device":        gpuDevices[nvidiaIndex],
+					})
 				}
 			}
 		}
 	}
 
-	return event
+	return events
+}
 
+func toUintP(val uint) *uint {
+	return &val
 }
