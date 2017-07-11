@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/elastic/beats/libbeat/common"
 	"github.com/elastic/beats/metricbeat/mb"
@@ -126,7 +127,8 @@ func fetchFromContainer(container *docker.Container, gpuDevices []DeviceStatus) 
 				if int(nvidiaIndex) < gpuDevicesLen {
 					gpuDevices[nvidiaIndex].Index = toUintP(uint(nvidiaIndex))
 					events = append(events, common.MapStr{
-						"containername": container.Name,
+						"containerid":   container.ID,
+						"containername": strings.TrimPrefix(container.Name, "/"),
 						"device":        gpuDevices[nvidiaIndex],
 					})
 				}
