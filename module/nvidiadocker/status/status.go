@@ -119,17 +119,24 @@ func getGPUDeviceStatus(apiURL string) ([]DeviceStatus, error) {
 }
 
 func fetchFromContainer(container *docker.Container, gpuDevices []DeviceStatus) []common.MapStr {
-	gpuDevicesLen := len(gpuDevices)
-	events := []common.MapStr{}
+	var (
+		gpuDevicesLen   = len(gpuDevices)
+		events          = []common.MapStr{}
+		containerID     = container.ID
+		containerName   = strings.TrimPrefix(container.Name, "/")
+		containerLabels = container.Config.Labels
+	)
+
 	for _, device := range container.HostConfig.Devices {
 		if findStrs := nvidiaDeviceRegexp.FindStringSubmatch(device.PathOnHost); findStrs != nil && len(findStrs) == 2 {
 			if nvidiaIndex, err := strconv.ParseInt(findStrs[1], 10, 64); err == nil {
 				if int(nvidiaIndex) < gpuDevicesLen {
 					gpuDevices[nvidiaIndex].Index = toUintP(uint(nvidiaIndex))
 					events = append(events, common.MapStr{
-						"containerid":   container.ID,
-						"containername": strings.TrimPrefix(container.Name, "/"),
+						"containerid":   containerID,
+						"containername": containerName,
 						"device":        gpuDevices[nvidiaIndex],
+						"labels":        containerLabels,
 					})
 				}
 			}

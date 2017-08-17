@@ -79,6 +79,20 @@ func TestFetchFromContainer(t *testing.T) {
 				},
 			},
 		},
+		Config: &docker.Config{
+			Labels: map[string]string{
+				"com.kakaobrain.cloud.agent.id":       "4e3bb646-c7ff-4807-8295-daccfdbc5a34-S1",
+				"com.kakaobrain.cloud.framework.id":   "ca766152-aa55-425f-b6fc-b84319732915-0000",
+				"com.kakaobrain.cloud.framework.name": "__deepcloud-dev__",
+				"com.kakaobrain.cloud.server.name":    "dave.go-172.28.11.37:1028",
+				"com.nvidia.build.id":                 "20511715",
+				"com.nvidia.build.ref":                "8cbbe3f50991afed6055bb714f79783fab77af54",
+				"com.nvidia.cuda.version":             "8.0.61",
+				"com.nvidia.cudnn.version":            "5.1.10",
+				"com.nvidia.volumes.needed":           "nvidia_driver",
+				"maintainer":                          "NVIDIA CORPORATION <cudatools@nvidia.com>",
+			},
+		},
 	}, gpuDevices)
 
 	fmt.Println(events)
