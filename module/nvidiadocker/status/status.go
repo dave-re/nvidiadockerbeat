@@ -36,6 +36,52 @@ type MetricSet struct {
 	dockerClient *docker.Client
 }
 
+type ContainerStatus struct {
+	devices []*DeviceStatus
+}
+
+func (c *ContainerStatus) AddDevice(device *DeviceStatus) {
+	c.devices = append(c.devices, device)
+}
+
+func (c *ContainerStatus) GPUSum() uint {
+	return c.PropSum(func(device *DeviceStatus) uint {
+		return device.Utilization.GPU
+	})
+}
+
+func (c *ContainerStatus) GPUMemorySum() uint {
+	return c.PropSum(func(device *DeviceStatus) uint {
+		return device.Utilization.Memory
+	})
+}
+
+func (c *ContainerStatus) TemperatureAverage() float64 {
+	return c.PropAverage(func(device *DeviceStatus) uint {
+		return device.Temperature
+	})
+}
+
+func (c *ContainerStatus) PropSum(getPropFunc func(device *DeviceStatus) uint) uint {
+	var total uint
+	for _, device := range c.devices {
+		total += getPropFunc(device)
+	}
+	return total
+}
+
+func (c *ContainerStatus) PropAverage(getPropFunc func(device *DeviceStatus) uint) float64 {
+	if len(c.devices) == 0 {
+		return 0
+	}
+
+	var total uint
+	for _, device := range c.devices {
+		total += getPropFunc(device)
+	}
+	return float64(total) / float64(len(c.devices))
+}
+
 // New create a new instance of the MetricSet
 // Part of new is also setting up the configuration by processing additional
 // configuration entries if needed.
@@ -90,10 +136,8 @@ func (m *MetricSet) fetchFromContainers(apiContainers []docker.APIContainers, gp
 	allEvents := make([]common.MapStr, 0, len(apiContainers))
 	for _, apiContainer := range apiContainers {
 		if container, err := m.dockerClient.InspectContainer(apiContainer.ID); err == nil {
-			events := fetchFromContainer(container, gpuDevices)
-			if len(events) > 0 {
-				allEvents = append(allEvents, events...)
-			}
+			event := fetchFromContainer(container, gpuDevices)
+			allEvents = append(allEvents, event)
 		}
 	}
 	return allEvents, nil
@@ -118,32 +162,38 @@ func getGPUDeviceStatus(apiURL string) ([]DeviceStatus, error) {
 	return status.Devices, nil
 }
 
-func fetchFromContainer(container *docker.Container, gpuDevices []DeviceStatus) []common.MapStr {
+func fetchFromContainer(container *docker.Container, gpuDevices []DeviceStatus) common.MapStr {
 	var (
 		gpuDevicesLen   = len(gpuDevices)
-		events          = []common.MapStr{}
 		containerID     = container.ID
 		containerName   = strings.TrimPrefix(container.Name, "/")
 		containerLabels = container.Config.Labels
+		event           = common.MapStr{
+			"containerid":   containerID,
+			"containername": containerName,
+			"labels":        containerLabels,
+		}
+		cStatus = &ContainerStatus{}
 	)
 
 	for _, device := range container.HostConfig.Devices {
 		if findStrs := nvidiaDeviceRegexp.FindStringSubmatch(device.PathOnHost); findStrs != nil && len(findStrs) == 2 {
 			if nvidiaIndex, err := strconv.ParseInt(findStrs[1], 10, 64); err == nil {
 				if int(nvidiaIndex) < gpuDevicesLen {
-					gpuDevices[nvidiaIndex].Index = toUintP(uint(nvidiaIndex))
-					events = append(events, common.MapStr{
-						"containerid":   containerID,
-						"containername": containerName,
-						"device":        gpuDevices[nvidiaIndex],
-						"labels":        containerLabels,
-					})
+					cStatus.AddDevice(&gpuDevices[nvidiaIndex])
 				}
 			}
 		}
 	}
 
-	return events
+	event["device"] = common.MapStr{
+		"Utilization": common.MapStr{
+			"GPU":    cStatus.GPUSum(),
+			"Memory": cStatus.GPUMemorySum(),
+		},
+		"Temperature": cStatus.TemperatureAverage(),
+	}
+	return event
 }
 
 func toUintP(val uint) *uint {
