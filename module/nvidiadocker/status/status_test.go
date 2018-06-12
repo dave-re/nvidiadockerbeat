@@ -2,7 +2,6 @@ package status
 
 import (
 	"fmt"
-	"log"
 	"reflect"
 	"testing"
 
@@ -215,12 +214,4 @@ func TestGetGPUDeviceStatus(t *testing.T) {
 	if !reflect.DeepEqual(devicesStatus, predictDevicesStatus) {
 		t.Fatal("failed")
 	}
-}
-
-func TestExecNvidiaSMICommand(t *testing.T) {
-	output, err := execNvidiaSMICommand()
-	if err != nil {
-		t.Fatal(err)
-	}
-	log.Println(output)
 }

@@ -2,7 +2,6 @@ package status
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -190,19 +189,10 @@ func getGPUDeviceStatus(nvidiaSmiRunOutput string) ([]DeviceStatus, error) {
 }
 
 func execNvidiaSMICommand() (string, error) {
-	cmd := exec.Command("nvidia-smi",
+	outputBytes, err := exec.Command("/usr/bin/nvidia-smi",
 		"--query-gpu=index,utilization.gpu,utilization.memory,temperature.gpu",
 		"--format=csv,noheader,nounits",
-	)
-	if err := cmd.Run(); err != nil {
-		return "", err
-	}
-
-	stdoutReader, err := cmd.StdoutPipe()
-	if err != nil {
-		return "", err
-	}
-	outputBytes, err := ioutil.ReadAll(stdoutReader)
+	).Output()
 	if err != nil {
 		return "", err
 	}
