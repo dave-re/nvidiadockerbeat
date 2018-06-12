@@ -1,8 +1,8 @@
 package status
 
 import (
-	"encoding/json"
 	"fmt"
+	"log"
 	"reflect"
 	"testing"
 
@@ -58,10 +58,39 @@ func TestNvidiaDeviceRegexp(t *testing.T) {
 }
 
 func TestFetchFromContainer(t *testing.T) {
-	devicesJSON := `[{"Power":13,"Temperature":15,"Utilization":{"GPU":1,"Memory":1,"Encoder":0,"Decoder":0},"Memory":{"GlobalUsed":8,"ECCErrors":{"L1Cache":null,"L2Cache":null,"Global":null}},"Clocks":{"Cores":40,"Memory":405},"PCI":{"BAR1Used":2,"Throughput":{"RX":0,"TX":0}},"Processes":null},{"Power":9,"Temperature":14,"Utilization":{"GPU":0,"Memory":0,"Encoder":0,"Decoder":0},"Memory":{"GlobalUsed":7,"ECCErrors":{"L1Cache":null,"L2Cache":null,"Global":null}},"Clocks":{"Cores":40,"Memory":405},"PCI":{"BAR1Used":2,"Throughput":{"RX":0,"TX":0}},"Processes":null},{"Power":9,"Temperature":18,"Utilization":{"GPU":0,"Memory":0,"Encoder":0,"Decoder":0},"Memory":{"GlobalUsed":7,"ECCErrors":{"L1Cache":null,"L2Cache":null,"Global":null}},"Clocks":{"Cores":40,"Memory":405},"PCI":{"BAR1Used":2,"Throughput":{"RX":0,"TX":0}},"Processes":null},{"Power":9,"Temperature":16,"Utilization":{"GPU":0,"Memory":0,"Encoder":0,"Decoder":0},"Memory":{"GlobalUsed":7,"ECCErrors":{"L1Cache":null,"L2Cache":null,"Global":null}},"Clocks":{"Cores":40,"Memory":405},"PCI":{"BAR1Used":2,"Throughput":{"RX":0,"TX":0}},"Processes":null},{"Power":9,"Temperature":20,"Utilization":{"GPU":0,"Memory":0,"Encoder":0,"Decoder":0},"Memory":{"GlobalUsed":7,"ECCErrors":{"L1Cache":null,"L2Cache":null,"Global":null}},"Clocks":{"Cores":40,"Memory":405},"PCI":{"BAR1Used":2,"Throughput":{"RX":0,"TX":0}},"Processes":null},{"Power":9,"Temperature":15,"Utilization":{"GPU":0,"Memory":0,"Encoder":0,"Decoder":0},"Memory":{"GlobalUsed":7,"ECCErrors":{"L1Cache":null,"L2Cache":null,"Global":null}},"Clocks":{"Cores":40,"Memory":405},"PCI":{"BAR1Used":2,"Throughput":{"RX":0,"TX":0}},"Processes":null},{"Power":9,"Temperature":18,"Utilization":{"GPU":0,"Memory":0,"Encoder":0,"Decoder":0},"Memory":{"GlobalUsed":7,"ECCErrors":{"L1Cache":null,"L2Cache":null,"Global":null}},"Clocks":{"Cores":40,"Memory":405},"PCI":{"BAR1Used":2,"Throughput":{"RX":0,"TX":0}},"Processes":null},{"Power":9,"Temperature":17,"Utilization":{"GPU":0,"Memory":0,"Encoder":0,"Decoder":0},"Memory":{"GlobalUsed":7,"ECCErrors":{"L1Cache":null,"L2Cache":null,"Global":null}},"Clocks":{"Cores":40,"Memory":405},"PCI":{"BAR1Used":2,"Throughput":{"RX":0,"TX":0}},"Processes":null}]`
-	gpuDevices := []DeviceStatus{}
-	if err := json.Unmarshal([]byte(devicesJSON), &gpuDevices); err != nil {
-		t.Fatal(err)
+	gpuDevices := []DeviceStatus{
+		{
+			Index:       toUintP(0),
+			Temperature: 15,
+			Utilization: UtilizationInfo{
+				GPU:    10,
+				Memory: 10,
+			},
+		},
+		{
+			Index:       toUintP(1),
+			Temperature: 14,
+			Utilization: UtilizationInfo{
+				GPU:    12,
+				Memory: 6,
+			},
+		},
+		{
+			Index:       toUintP(2),
+			Temperature: 48,
+			Utilization: UtilizationInfo{
+				GPU:    30,
+				Memory: 40,
+			},
+		},
+		{
+			Index:       toUintP(3),
+			Temperature: 20,
+			Utilization: UtilizationInfo{
+				GPU:    12,
+				Memory: 14,
+			},
+		},
 	}
 
 	event := fetchFromContainer(&docker.Container{
@@ -100,4 +129,98 @@ func TestFetchFromContainer(t *testing.T) {
 	// if len(events) != 2 {
 	// 	t.Fatal("no events")
 	// }
+}
+
+func TestGetGPUDeviceStatus(t *testing.T) {
+	output := `0, 66, 47, 27
+	1, 10, 14, 25
+	2, 37, 0, 33
+	3, 0, 0, 22
+	4, 0, 0, 16
+	5, 44, 20, 36
+	6, 0, 0, 17
+	7, 20, 3, 27
+`
+	predictDevicesStatus := []DeviceStatus{
+		{
+			Index: toUintP(0),
+			Utilization: UtilizationInfo{
+				GPU:    66,
+				Memory: 47,
+			},
+			Temperature: 27,
+		},
+		{
+			Index: toUintP(1),
+			Utilization: UtilizationInfo{
+				GPU:    10,
+				Memory: 14,
+			},
+			Temperature: 25,
+		},
+		{
+			Index: toUintP(2),
+			Utilization: UtilizationInfo{
+				GPU:    37,
+				Memory: 0,
+			},
+			Temperature: 33,
+		},
+		{
+			Index: toUintP(3),
+			Utilization: UtilizationInfo{
+				GPU:    0,
+				Memory: 0,
+			},
+			Temperature: 22,
+		},
+		{
+			Index: toUintP(4),
+			Utilization: UtilizationInfo{
+				GPU:    0,
+				Memory: 0,
+			},
+			Temperature: 16,
+		},
+		{
+			Index: toUintP(5),
+			Utilization: UtilizationInfo{
+				GPU:    44,
+				Memory: 20,
+			},
+			Temperature: 36,
+		},
+		{
+			Index: toUintP(6),
+			Utilization: UtilizationInfo{
+				GPU:    0,
+				Memory: 0,
+			},
+			Temperature: 17,
+		},
+		{
+			Index: toUintP(7),
+			Utilization: UtilizationInfo{
+				GPU:    20,
+				Memory: 3,
+			},
+			Temperature: 27,
+		},
+	}
+	devicesStatus, err := getGPUDeviceStatus(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !reflect.DeepEqual(devicesStatus, predictDevicesStatus) {
+		t.Fatal("failed")
+	}
+}
+
+func TestExecNvidiaSMICommand(t *testing.T) {
+	output, err := execNvidiaSMICommand()
+	if err != nil {
+		t.Fatal(err)
+	}
+	log.Println(output)
 }
