@@ -9,7 +9,7 @@ import (
 
 	"github.com/elastic/beats/libbeat/common"
 	"github.com/elastic/beats/metricbeat/mb"
-	docker "github.com/fsouza/go-dockerclient"
+	docker "github.com/fpgeek/go-dockerclient"
 )
 
 const (
@@ -219,7 +219,7 @@ func fetchFromContainer(container *docker.Container, gpuDevices []DeviceStatus) 
 		cStatus = &ContainerStatus{}
 	)
 
-	if container.Config.Runtime == nvidiaRuntimeName {
+	if container.HostConfig.Runtime == nvidiaRuntimeName {
 		deviceIndices := getNvidiaVisibleDevices(container.Config.Env)
 		for _, deviceIndex := range deviceIndices {
 			if deviceIndex < gpuDevicesLen {
