@@ -215,3 +215,33 @@ func TestGetGPUDeviceStatus(t *testing.T) {
 		t.Fatal("failed")
 	}
 }
+
+func TestGetNvidiaVisibleDevices(t *testing.T) {
+	tests := []struct {
+		ENV    []string
+		Result []int
+	}{
+		{
+			ENV:    []string{"NVIDIA_VISIBLE_DEVICES=3"},
+			Result: []int{3},
+		},
+		{
+			ENV:    []string{"NVIDIA_VISIBLE_DEVICES=0,1,2,3"},
+			Result: []int{0, 1, 2, 3},
+		},
+		{
+			ENV:    []string{"NVIDIA_VISIBLE_DEVICES=5,1"},
+			Result: []int{5, 1},
+		},
+		{
+			ENV:    []string{"ABC=BCD"},
+			Result: []int{},
+		},
+	}
+	for _, test := range tests {
+		deviceIndices := getNvidiaVisibleDevices(test.ENV)
+		if !reflect.DeepEqual(deviceIndices, test.Result) {
+			t.Fatal("failed")
+		}
+	}
+}

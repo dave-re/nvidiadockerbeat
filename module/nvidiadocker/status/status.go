@@ -12,6 +12,11 @@ import (
 	docker "github.com/fsouza/go-dockerclient"
 )
 
+const (
+	nvidiaRuntimeName          = "nvidia"
+	nvidiaVisibleDevicesENVKey = "NVIDIA_VISIBLE_DEVICES"
+)
+
 var (
 	nvidiaDeviceRegexp = regexp.MustCompile("^/dev/nvidia([0-9]+)$")
 )
@@ -214,11 +219,20 @@ func fetchFromContainer(container *docker.Container, gpuDevices []DeviceStatus) 
 		cStatus = &ContainerStatus{}
 	)
 
-	for _, device := range container.HostConfig.Devices {
-		if findStrs := nvidiaDeviceRegexp.FindStringSubmatch(device.PathOnHost); findStrs != nil && len(findStrs) == 2 {
-			if nvidiaIndex, err := strconv.ParseInt(findStrs[1], 10, 64); err == nil {
-				if int(nvidiaIndex) < gpuDevicesLen {
-					cStatus.AddDevice(&gpuDevices[nvidiaIndex])
+	if container.Config.Runtime == nvidiaRuntimeName {
+		deviceIndices := getNvidiaVisibleDevices(container.Config.Env)
+		for _, deviceIndex := range deviceIndices {
+			if deviceIndex < gpuDevicesLen {
+				cStatus.AddDevice(&gpuDevices[deviceIndex])
+			}
+		}
+	} else {
+		for _, device := range container.HostConfig.Devices {
+			if findStrs := nvidiaDeviceRegexp.FindStringSubmatch(device.PathOnHost); findStrs != nil && len(findStrs) == 2 {
+				if deviceIndex, err := strconv.ParseInt(findStrs[1], 10, 64); err == nil {
+					if int(deviceIndex) < gpuDevicesLen {
+						cStatus.AddDevice(&gpuDevices[deviceIndex])
+					}
 				}
 			}
 		}
@@ -236,4 +250,21 @@ func fetchFromContainer(container *docker.Container, gpuDevices []DeviceStatus) 
 
 func toUintP(val uint) *uint {
 	return &val
+}
+
+func getNvidiaVisibleDevices(env []string) []int {
+	deviceIndices := make([]int, 0, 8)
+	for _, envStr := range env {
+		if strings.HasPrefix(envStr, fmt.Sprintf("%s=", nvidiaVisibleDevicesENVKey)) {
+			splitEnvStrs := strings.Split(envStr, "=")
+			if len(splitEnvStrs) == 2 {
+				for _, deviceIndexStr := range strings.Split(splitEnvStrs[1], ",") {
+					if deviceIndex, err := strconv.ParseInt(deviceIndexStr, 10, 64); err == nil {
+						deviceIndices = append(deviceIndices, int(deviceIndex))
+					}
+				}
+			}
+		}
+	}
+	return deviceIndices
 }
