@@ -9,7 +9,7 @@ import (
 
 	"github.com/elastic/beats/libbeat/common"
 	"github.com/elastic/beats/metricbeat/mb"
-	docker "github.com/fpgeek/go-dockerclient"
+	docker "github.com/fsouza/go-dockerclient"
 )
 
 const (
@@ -156,7 +156,7 @@ func getGPUDeviceStatus(nvidiaSmiRunOutput string) ([]DeviceStatus, error) {
 	deviceStatuses := make([]DeviceStatus, 0, len(lines))
 	for _, line := range lines {
 		contents := strings.Split(line, ",")
-		if len(contents) != 4 {
+		if len(contents) != 5 {
 			continue
 		}
 
@@ -170,12 +170,17 @@ func getGPUDeviceStatus(nvidiaSmiRunOutput string) ([]DeviceStatus, error) {
 			return nil, err
 		}
 
-		memUtil, err := strconv.ParseUint(strings.TrimSpace(contents[2]), 10, 64)
+		memTotal, err := strconv.ParseFloat(strings.TrimSpace(contents[2]), 10)
 		if err != nil {
 			return nil, err
 		}
 
-		temperature, err := strconv.ParseUint(strings.TrimSpace(contents[3]), 10, 64)
+		memUsed, err := strconv.ParseFloat(strings.TrimSpace(contents[3]), 10)
+		if err != nil {
+			return nil, err
+		}
+
+		temperature, err := strconv.ParseUint(strings.TrimSpace(contents[4]), 10, 64)
 		if err != nil {
 			return nil, err
 		}
@@ -185,7 +190,7 @@ func getGPUDeviceStatus(nvidiaSmiRunOutput string) ([]DeviceStatus, error) {
 			Temperature: uint(temperature),
 			Utilization: UtilizationInfo{
 				GPU:    uint(gpuUtil),
-				Memory: uint(memUtil),
+				Memory: uint((memUsed / memTotal) * 100.0),
 			},
 		})
 
@@ -195,7 +200,7 @@ func getGPUDeviceStatus(nvidiaSmiRunOutput string) ([]DeviceStatus, error) {
 
 func execNvidiaSMICommand() (string, error) {
 	outputBytes, err := exec.Command("/usr/bin/nvidia-smi",
-		"--query-gpu=index,utilization.gpu,utilization.memory,temperature.gpu",
+		"--query-gpu=index,utilization.gpu,memory.total,memory.used,temperature.gpu",
 		"--format=csv,noheader,nounits",
 	).Output()
 	if err != nil {

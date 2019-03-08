@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	docker "github.com/fsouza/go-dockerclient"
+	docker "github.com/fpgeek/go-dockerclient"
 )
 
 func TestNvidiaDeviceRegexp(t *testing.T) {
@@ -131,14 +131,14 @@ func TestFetchFromContainer(t *testing.T) {
 }
 
 func TestGetGPUDeviceStatus(t *testing.T) {
-	output := `0, 66, 47, 27
-	1, 10, 14, 25
-	2, 37, 0, 33
-	3, 0, 0, 22
-	4, 0, 0, 16
-	5, 44, 20, 36
-	6, 0, 0, 17
-	7, 20, 3, 27
+	output := `0, 45, 22919, 21227, 48
+	1, 100, 22919, 15945, 51
+	2, 98, 22919, 16457, 69
+	3, 100, 22919, 21211, 76
+	4, 100, 22919, 21649, 52
+	5, 100, 22919, 21639, 52
+	6, 100, 22919, 21269, 71
+	7, 100, 22919, 16231, 79
 `
 	predictDevicesStatus := []DeviceStatus{
 		{
@@ -210,6 +210,7 @@ func TestGetGPUDeviceStatus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	fmt.Print("devicesStatus", devicesStatus)
 
 	if !reflect.DeepEqual(devicesStatus, predictDevicesStatus) {
 		t.Fatal("failed")
