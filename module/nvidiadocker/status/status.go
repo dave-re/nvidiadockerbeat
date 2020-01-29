@@ -224,22 +224,10 @@ func fetchFromContainer(container *docker.Container, gpuDevices []DeviceStatus) 
 		cStatus = &ContainerStatus{}
 	)
 
-	if container.HostConfig.Runtime == nvidiaRuntimeName {
-		deviceIndices := getNvidiaVisibleDevices(container.Config.Env)
-		for _, deviceIndex := range deviceIndices {
-			if deviceIndex < gpuDevicesLen {
-				cStatus.AddDevice(&gpuDevices[deviceIndex])
-			}
-		}
-	} else {
-		for _, device := range container.HostConfig.Devices {
-			if findStrs := nvidiaDeviceRegexp.FindStringSubmatch(device.PathOnHost); findStrs != nil && len(findStrs) == 2 {
-				if deviceIndex, err := strconv.ParseInt(findStrs[1], 10, 64); err == nil {
-					if int(deviceIndex) < gpuDevicesLen {
-						cStatus.AddDevice(&gpuDevices[deviceIndex])
-					}
-				}
-			}
+	deviceIndices := getNvidiaVisibleDevices(container.Config.Env)
+	for _, deviceIndex := range deviceIndices {
+		if deviceIndex < gpuDevicesLen {
+			cStatus.AddDevice(&gpuDevices[deviceIndex])
 		}
 	}
 
