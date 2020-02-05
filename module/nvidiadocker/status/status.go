@@ -1,10 +1,8 @@
 package status
 
 import (
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
-	"net/http"
+	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
@@ -12,6 +10,11 @@ import (
 	"github.com/elastic/beats/libbeat/common"
 	"github.com/elastic/beats/metricbeat/mb"
 	docker "github.com/fsouza/go-dockerclient"
+)
+
+const (
+	nvidiaRuntimeName          = "nvidia"
+	nvidiaVisibleDevicesENVKey = "NVIDIA_VISIBLE_DEVICES"
 )
 
 var (
@@ -26,19 +29,24 @@ func init() {
 	}
 }
 
-// MetricSet type defines all fields of the MetricSet
-// As a minimum it must inherit the mb.BaseMetricSet fields, but can be extended with
-// additional entries. These variables can be used to persist data or configuration between
-// multiple fetch calls.
-type MetricSet struct {
-	mb.BaseMetricSet
-	apiURL       string
-	dockerClient *docker.Client
-}
+type (
+	// MetricSet type defines all fields of the MetricSet
+	// As a minimum it must inherit the mb.BaseMetricSet fields, but can be extended with
+	// additional entries. These variables can be used to persist data or configuration between
+	// multiple fetch calls.
+	MetricSet struct {
+		mb.BaseMetricSet
+		dockerClient *docker.Client
+	}
 
-type ContainerStatus struct {
-	devices []*DeviceStatus
-}
+	ContainerStatus struct {
+		devices []*DeviceStatus
+	}
+
+	config struct {
+		DockerEndpoint string `config:"dockerendpoint"`
+	}
+)
 
 func (c *ContainerStatus) AddDevice(device *DeviceStatus) {
 	c.devices = append(c.devices, device)
@@ -87,26 +95,21 @@ func (c *ContainerStatus) PropAverage(getPropFunc func(device *DeviceStatus) uin
 // configuration entries if needed.
 func New(base mb.BaseMetricSet) (mb.MetricSet, error) {
 
-	config := struct {
-		APIURL         string `config:"apiurl"`
-		DockerEndpoint string `config:"dockerendpoint"`
-	}{
-		APIURL:         "",
+	cfg := config{
 		DockerEndpoint: "",
 	}
 
-	if err := base.Module().UnpackConfig(&config); err != nil {
+	if err := base.Module().UnpackConfig(&cfg); err != nil {
 		return nil, err
 	}
 
-	dockerClient, err := docker.NewClient(config.DockerEndpoint)
+	dockerClient, err := docker.NewClient(cfg.DockerEndpoint)
 	if err != nil {
 		return nil, err
 	}
 
 	return &MetricSet{
 		BaseMetricSet: base,
-		apiURL:        config.APIURL,
 		dockerClient:  dockerClient,
 	}, nil
 }
@@ -124,7 +127,12 @@ func (m *MetricSet) Fetch() ([]common.MapStr, error) {
 		return []common.MapStr{}, nil
 	}
 
-	gpuDevices, err := getGPUDeviceStatus(m.apiURL)
+	output, err := execNvidiaSMICommand()
+	if err != nil {
+		return nil, err
+	}
+
+	gpuDevices, err := getGPUDeviceStatus(output)
 	if err != nil {
 		return nil, err
 	}
@@ -143,23 +151,63 @@ func (m *MetricSet) fetchFromContainers(apiContainers []docker.APIContainers, gp
 	return allEvents, nil
 }
 
-func getGPUDeviceStatus(apiURL string) ([]DeviceStatus, error) {
-	resp, err := http.Get(fmt.Sprintf("%s/v1.0/gpu/status/json", apiURL))
-	if err != nil {
-		return nil, err
-	}
-	bytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
+func getGPUDeviceStatus(nvidiaSmiRunOutput string) ([]DeviceStatus, error) {
+	lines := strings.Split(strings.TrimSpace(nvidiaSmiRunOutput), "\n")
+	deviceStatuses := make([]DeviceStatus, 0, len(lines))
+	for _, line := range lines {
+		contents := strings.Split(line, ",")
+		if len(contents) != 5 {
+			continue
+		}
 
-	status := NvidiaStatus{}
-	if err := json.Unmarshal(bytes, &status); err != nil {
-		return nil, err
+		index, err := strconv.ParseUint(strings.TrimSpace(contents[0]), 10, 64)
+		if err != nil {
+			return nil, err
+		}
+
+		gpuUtil, err := strconv.ParseUint(strings.TrimSpace(contents[1]), 10, 64)
+		if err != nil {
+			return nil, err
+		}
+
+		memTotal, err := strconv.ParseFloat(strings.TrimSpace(contents[2]), 10)
+		if err != nil {
+			return nil, err
+		}
+
+		memUsed, err := strconv.ParseFloat(strings.TrimSpace(contents[3]), 10)
+		if err != nil {
+			return nil, err
+		}
+
+		temperature, err := strconv.ParseUint(strings.TrimSpace(contents[4]), 10, 64)
+		if err != nil {
+			return nil, err
+		}
+
+		deviceStatuses = append(deviceStatuses, DeviceStatus{
+			Index:       toUintP(uint(index)),
+			Temperature: uint(temperature),
+			Utilization: UtilizationInfo{
+				GPU:    uint(gpuUtil),
+				Memory: uint((memUsed / memTotal) * 100.0),
+			},
+		})
+
+	}
+	return deviceStatuses, nil
+}
+
+func execNvidiaSMICommand() (string, error) {
+	outputBytes, err := exec.Command("/usr/bin/nvidia-smi",
+		"--query-gpu=index,utilization.gpu,memory.total,memory.used,temperature.gpu",
+		"--format=csv,noheader,nounits",
+	).Output()
+	if err != nil {
+		return "", err
 	}
 
-	return status.Devices, nil
+	return fmt.Sprintf("%s", outputBytes), nil
 }
 
 func fetchFromContainer(container *docker.Container, gpuDevices []DeviceStatus) common.MapStr {
@@ -176,13 +224,10 @@ func fetchFromContainer(container *docker.Container, gpuDevices []DeviceStatus) 
 		cStatus = &ContainerStatus{}
 	)
 
-	for _, device := range container.HostConfig.Devices {
-		if findStrs := nvidiaDeviceRegexp.FindStringSubmatch(device.PathOnHost); findStrs != nil && len(findStrs) == 2 {
-			if nvidiaIndex, err := strconv.ParseInt(findStrs[1], 10, 64); err == nil {
-				if int(nvidiaIndex) < gpuDevicesLen {
-					cStatus.AddDevice(&gpuDevices[nvidiaIndex])
-				}
-			}
+	deviceIndices := getNvidiaVisibleDevices(container.Config.Env)
+	for _, deviceIndex := range deviceIndices {
+		if deviceIndex < gpuDevicesLen {
+			cStatus.AddDevice(&gpuDevices[deviceIndex])
 		}
 	}
 
@@ -198,4 +243,21 @@ func fetchFromContainer(container *docker.Container, gpuDevices []DeviceStatus) 
 
 func toUintP(val uint) *uint {
 	return &val
+}
+
+func getNvidiaVisibleDevices(env []string) []int {
+	deviceIndices := make([]int, 0, 8)
+	for _, envStr := range env {
+		if strings.HasPrefix(envStr, fmt.Sprintf("%s=", nvidiaVisibleDevicesENVKey)) {
+			splitEnvStrs := strings.Split(envStr, "=")
+			if len(splitEnvStrs) == 2 {
+				for _, deviceIndexStr := range strings.Split(splitEnvStrs[1], ",") {
+					if deviceIndex, err := strconv.ParseInt(deviceIndexStr, 10, 64); err == nil {
+						deviceIndices = append(deviceIndices, int(deviceIndex))
+					}
+				}
+			}
+		}
+	}
+	return deviceIndices
 }
