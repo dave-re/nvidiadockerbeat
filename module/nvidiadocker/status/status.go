@@ -9,7 +9,7 @@ import (
 
 	"github.com/elastic/beats/libbeat/common"
 	"github.com/elastic/beats/metricbeat/mb"
-	docker "github.com/fsouza/go-dockerclient"
+	docker "github.com/fpgeek/go-dockerclient"
 )
 
 const (
@@ -224,7 +224,7 @@ func fetchFromContainer(container *docker.Container, gpuDevices []DeviceStatus) 
 		cStatus = &ContainerStatus{}
 	)
 
-	deviceIndices := getNvidiaVisibleDevices(container.Config.Env)
+	deviceIndices := getGPUDeviceIndices(container)
 	for _, deviceIndex := range deviceIndices {
 		if deviceIndex < gpuDevicesLen {
 			cStatus.AddDevice(&gpuDevices[deviceIndex])
@@ -241,11 +241,22 @@ func fetchFromContainer(container *docker.Container, gpuDevices []DeviceStatus) 
 	return event
 }
 
+func getGPUDeviceIndices(container *docker.Container) []int {
+	if container.HostConfig.DeviceRequests != nil {
+		for _, deviceReq := range container.HostConfig.DeviceRequests {
+			if isIncludeGPUCapability(deviceReq.Capabilities) {
+				return getNvidiaDevicesFromDeviceIDs(deviceReq.DeviceIDs)
+			}
+		}
+	}
+	return getNvidiaDevicesFromEnvs(container.Config.Env)
+}
+
 func toUintP(val uint) *uint {
 	return &val
 }
 
-func getNvidiaVisibleDevices(env []string) []int {
+func getNvidiaDevicesFromEnvs(env []string) []int {
 	deviceIndices := make([]int, 0, 8)
 	for _, envStr := range env {
 		if strings.HasPrefix(envStr, fmt.Sprintf("%s=", nvidiaVisibleDevicesENVKey)) {
@@ -261,3 +272,26 @@ func getNvidiaVisibleDevices(env []string) []int {
 	}
 	return deviceIndices
 }
+
+func getNvidiaDevicesFromDeviceIDs(strDeviceIDs []string) []int {
+	deviceIndices := make([]int, 0, 8)
+	for _, strDeviceID := range strDeviceIDs {
+		if deviceIndex, err := strconv.ParseInt(strDeviceID, 10, 64); err == nil {
+			deviceIndices = append(deviceIndices, int(deviceIndex))
+		}
+	}
+	return deviceIndices
+}
+
+func isIncludeGPUCapability(capabilities [][]string) bool {
+	for _, caps := range capabilities {
+		for _, capValue := range caps {
+			if capValue == "gpu" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+

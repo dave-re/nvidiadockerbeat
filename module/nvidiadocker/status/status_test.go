@@ -240,7 +240,7 @@ func TestGetNvidiaVisibleDevices(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
-		deviceIndices := getNvidiaVisibleDevices(test.ENV)
+		deviceIndices := getNvidiaDevicesFromEnvs(test.ENV)
 		if !reflect.DeepEqual(deviceIndices, test.Result) {
 			t.Fatal("failed")
 		}
