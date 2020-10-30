@@ -1,11 +1,13 @@
 package status
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/elastic/beats/libbeat/common"
 	"github.com/elastic/beats/metricbeat/mb"
@@ -199,14 +201,16 @@ func getGPUDeviceStatus(nvidiaSmiRunOutput string) ([]DeviceStatus, error) {
 }
 
 func execNvidiaSMICommand() (string, error) {
-	outputBytes, err := exec.Command("/usr/bin/nvidia-smi",
+	ctx, cancel := context.WithTimeout(context.Background(), 30 * time.Second)
+	defer cancel()
+
+	outputBytes, err := exec.CommandContext(ctx, "/usr/bin/nvidia-smi",
 		"--query-gpu=index,utilization.gpu,memory.total,memory.used,temperature.gpu",
 		"--format=csv,noheader,nounits",
 	).Output()
 	if err != nil {
 		return "", err
 	}
-
 	return fmt.Sprintf("%s", outputBytes), nil
 }
 
